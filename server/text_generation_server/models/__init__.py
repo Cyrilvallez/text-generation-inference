@@ -16,10 +16,12 @@ from transformers.models.auto import modeling_auto
 from huggingface_hub import hf_hub_download, HfApi
 from typing import Optional, List, Dict
 from pathlib import Path
+import transformers
 
 from text_generation_server.utils.speculate import get_speculate, set_speculate
 from text_generation_server.models.model import Model
 from text_generation_server.models.causal_lm import CausalLM, CausalLMBatchKeysLast
+
 from text_generation_server.models.custom_modeling.opt_modeling import OPTForCausalLM
 from text_generation_server.models.custom_modeling.mpt_modeling import (
     MPTForCausalLM,
@@ -81,6 +83,9 @@ FLASH_ATTENTION = True
 
 try:
     from text_generation_server.models.flash_causal_lm import FlashCausalLM
+    from text_generation_server.models.transformers_flash_causal_lm import (
+        TransformersFlashCausalLM,
+    )
     from text_generation_server.models.vlm_causal_lm import VlmCausalLM
     from text_generation_server.models.mllama_causal_lm import MllamaCausalLM
     from text_generation_server.models.custom_modeling.flash_deepseek_v2_modeling import (
@@ -372,6 +377,20 @@ def get_model(
     )
     model_type = config_dict.get("model_type", None)
 
+    transformers_causal_lm_class = CausalLM
+
+    # Fast transformers path
+    transformers_model_class = getattr(
+        transformers, modeling_auto.MODEL_FOR_CAUSAL_LM_MAPPING_NAMES[model_type]
+    )
+
+    if FLASH_ATTENTION and transformers_model_class._supports_flex_attn:
+        transformers_causal_lm_class = TransformersFlashCausalLM
+        if lora_adapter_ids is not None and len(lora_adapter_ids) > 0:
+            raise ValueError(
+                "Flash `Transformers` modeling backend does not support `lora_adapter_ids`."
+            )
+
     quantization_config = config_dict.get("quantization_config", None)
     if quantization_config is None:
         quantization_config = config_dict.get("compression_config", None)
@@ -615,7 +634,7 @@ def get_model(
                 FLASH_ATT_ERROR_MESSAGE.format("Sharded Deepseek V2")
             )
         else:
-            return CausalLM.fallback(
+            return transformers_causal_lm_class.fallback(
                 model_id,
                 revision,
                 quantize=quantize,
@@ -674,7 +693,7 @@ def get_model(
                 FLASH_ATT_ERROR_MESSAGE.format("Sharded Santacoder")
             )
         else:
-            return CausalLM.fallback(
+            return transformers_causal_lm_class.fallback(
                 model_id=model_id,
                 revision=revision,
                 quantize=quantize,
@@ -722,7 +741,7 @@ def get_model(
             except RuntimeError as e:
                 # Lots of legacy models with various weight names.
                 log_master(logger.warning, f"Couldn't load flash gpt2 variant: {e}")
-                return CausalLM.fallback(
+                return transformers_causal_lm_class.fallback(
                     model_id,
                     revision,
                     quantize=quantize,
@@ -733,7 +752,7 @@ def get_model(
         elif sharded:
             raise NotImplementedError(FLASH_ATT_ERROR_MESSAGE.format("Sharded GPT-2"))
         else:
-            return CausalLM.fallback(
+            return transformers_causal_lm_class.fallback(
                 model_id,
                 revision,
                 quantize=quantize,
@@ -758,7 +777,7 @@ def get_model(
             except RuntimeError as e:
                 # Lots of legacy models with various weight names.
                 log_master(logger.warning, f"Couldn't load flash gptj variant: {e}")
-                return CausalLM.fallback(
+                return transformers_causal_lm_class.fallback(
                     model_id,
                     revision,
                     quantize=quantize,
@@ -769,7 +788,7 @@ def get_model(
         elif sharded:
             raise NotImplementedError(FLASH_ATT_ERROR_MESSAGE.format("Sharded GPT-J"))
         else:
-            return CausalLM.fallback(
+            return transformers_causal_lm_class.fallback(
                 model_id,
                 revision,
                 quantize=quantize,
@@ -806,7 +825,7 @@ def get_model(
                 trust_remote_code=trust_remote_code,
             )
         else:
-            return CausalLM.fallback(
+            return transformers_causal_lm_class.fallback(
                 model_id,
                 revision,
                 quantize=quantize,
@@ -829,7 +848,7 @@ def get_model(
                 lora_adapter_ids=lora_adapter_ids,
             )
         else:
-            return CausalLM.fallback(
+            return transformers_causal_lm_class.fallback(
                 model_id,
                 revision,
                 quantize=quantize,
@@ -853,7 +872,7 @@ def get_model(
                 lora_adapter_ids=lora_adapter_ids,
             )
         else:
-            return CausalLM.fallback(
+            return transformers_causal_lm_class.fallback(
                 model_id,
                 revision,
                 quantize=quantize,
@@ -902,7 +921,7 @@ def get_model(
                 FLASH_ATT_ERROR_MESSAGE.format(f"Sharded {model_type}")
             )
         else:
-            return CausalLM.fallback(
+            return transformers_causal_lm_class.fallback(
                 model_id,
                 revision,
                 quantize=quantize,
@@ -928,7 +947,7 @@ def get_model(
         elif sharded:
             raise NotImplementedError(FLASH_ATT_ERROR_MESSAGE.format("Sharded Gemma"))
         else:
-            return CausalLM.fallback(
+            return transformers_causal_lm_class.fallback(
                 model_id,
                 revision,
                 quantize=quantize,
@@ -954,7 +973,7 @@ def get_model(
         elif sharded:
             raise NotImplementedError(FLASH_ATT_ERROR_MESSAGE.format("Sharded Gemma2"))
         else:
-            return CausalLM.fallback(
+            return transformers_causal_lm_class.fallback(
                 model_id,
                 revision,
                 quantize=quantize,
@@ -979,7 +998,7 @@ def get_model(
         elif sharded:
             raise NotImplementedError(FLASH_ATT_ERROR_MESSAGE.format("Sharded Cohere"))
         else:
-            return CausalLM.fallback(
+            return transformers_causal_lm_class.fallback(
                 model_id,
                 revision,
                 quantize=quantize,
@@ -1007,7 +1026,7 @@ def get_model(
         elif sharded:
             raise NotImplementedError(FLASH_ATT_ERROR_MESSAGE.format("Sharded DBRX"))
         else:
-            return CausalLM.fallback(
+            return transformers_causal_lm_class.fallback(
                 model_id,
                 revision,
                 quantize=quantize,
@@ -1057,7 +1076,7 @@ def get_model(
                     config_class=RWConfig,
                 )
             else:
-                return CausalLM.fallback(
+                return transformers_causal_lm_class.fallback(
                     model_id,
                     revision,
                     quantize=quantize,
@@ -1082,7 +1101,7 @@ def get_model(
         elif sharded:
             raise NotImplementedError(FLASH_ATT_ERROR_MESSAGE.format("Sharded Mistral"))
         else:
-            return CausalLM.fallback(
+            return transformers_causal_lm_class.fallback(
                 model_id,
                 revision,
                 quantize=quantize,
@@ -1107,7 +1126,7 @@ def get_model(
         elif sharded:
             raise NotImplementedError(FLASH_ATT_ERROR_MESSAGE.format("Sharded Mixtral"))
         else:
-            return CausalLM.fallback(
+            return transformers_causal_lm_class.fallback(
                 model_id,
                 revision,
                 quantize=quantize,
@@ -1134,7 +1153,7 @@ def get_model(
                 FLASH_ATT_ERROR_MESSAGE.format("Sharded Starcoder2")
             )
         else:
-            return CausalLM.fallback(
+            return transformers_causal_lm_class.fallback(
                 model_id,
                 revision,
                 quantize=quantize,
@@ -1159,7 +1178,7 @@ def get_model(
         elif sharded:
             raise NotImplementedError(FLASH_ATT_ERROR_MESSAGE.format("Sharded Qwen2"))
         else:
-            return CausalLM.fallback(
+            return transformers_causal_lm_class.fallback(
                 model_id,
                 revision,
                 quantize=quantize,
@@ -1302,7 +1321,7 @@ def get_model(
     elif quantize == "exl2":
         raise NotImplementedError("exl2 quantization is not supported for AutoModel")
     if model_type in modeling_auto.MODEL_FOR_CAUSAL_LM_MAPPING_NAMES:
-        return CausalLM.fallback(
+        return transformers_causal_lm_class.fallback(
             model_id,
             revision,
             quantize=quantize,
@@ -1323,7 +1342,7 @@ def get_model(
     auto_map = config_dict.get("auto_map", None)
     if trust_remote_code and auto_map is not None:
         if "AutoModelForCausalLM" in auto_map.keys():
-            return CausalLM.fallback(
+            return transformers_causal_lm_class.fallback(
                 model_id,
                 revision,
                 quantize=quantize,
